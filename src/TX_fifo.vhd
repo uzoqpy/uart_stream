@@ -4,7 +4,7 @@ use ieee.numeric_std.all;
 
 entity tx_fifo is
     generic (
-        FIFO_DEPTH : integer := 256  -- Must be power of 2
+        FIFO_DEPTH 			: integer := 256  -- Must be power of 2
     );
     port (
         CLK   				: in  std_logic;
@@ -36,7 +36,7 @@ architecture rtl of tx_fifo is
     signal wr_ptr 			: integer range 0 to FIFO_DEPTH-1 := 0;
     signal rd_ptr 			: integer range 0 to FIFO_DEPTH-1 := 0;
                         	
-    signal fifo_count 		: integer range -1 to FIFO_DEPTH + 1 := 0;
+    signal fifo_count 		: integer range 0 to FIFO_DEPTH := 0;
                         	
     signal wr_en 			: std_logic;
     signal rd_en 			: std_logic;  
@@ -47,6 +47,7 @@ architecture rtl of tx_fifo is
     signal r_fifo2uart_data : std_logic_vector(7 downto 0);
     	
     signal sEmpty			: std_logic ;	
+    signal sFull			: std_logic ;	
     
 
 
@@ -56,7 +57,8 @@ begin
 	M_AXIS_TVALID 	<= r_axis_tvalid;
 	S_AXIS_TREADY 	<= r_axis_tready;
 	M_AXIS_TDATA	<= r_fifo2uart_data;
-	empty 			<= sEmpty;
+	empty 			<= sEmpty; 
+	full			<= sFull;
 	
     -- Write enable when valid and ready
     wr_en <= '1' when (S_AXIS_TVALID = '1' and r_axis_tready = '1') else '0';
@@ -65,8 +67,9 @@ begin
     rd_en <= '1' when (M_AXIS_TREADY = '1' and r_axis_tvalid = '1') else '0';
 
     -- Input: S_AXIS_TREADY is high when FIFO is not full
-    --r_axis_tready <= '1' when fifo_count < FIFO_DEPTH else '0';
-    r_axis_tready <= '1' when (fifo_count < FIFO_DEPTH) or (rd_en = '1') else '0';	
+    r_axis_tready <= '1' when (fifo_count < FIFO_DEPTH) or
+                          	 ((fifo_count = FIFO_DEPTH) and (M_AXIS_TREADY = '1' and fifo_count > 0))
+                 else '0';	
 
     -- Output: M_AXIS_TVALID is high when FIFO is not empty
     r_axis_tvalid <= '1' when fifo_count > 0 else '0';
@@ -76,7 +79,8 @@ begin
     
     -- FIFO Flags	
     sEmpty <= '1' when fifo_count = 0 else '0';
-	full  <= '1' when fifo_count = FIFO_DEPTH else '0';	
+	sFull  <= '1' when fifo_count = FIFO_DEPTH else '0';	
+		
 
     -- Sequential process: write and read logic
     process(CLK)
@@ -87,18 +91,23 @@ begin
                 rd_ptr <= 0;
                 fifo_count <= 0;
             else
-                -- Write operation
+                -- Write operation updated	
                 if wr_en = '1' then
-                    fifo_mem(wr_ptr) <= S_AXIS_TDATA;
-                    wr_ptr <= (wr_ptr + 1) mod FIFO_DEPTH;
-                    --fifo_count <= fifo_count + 1;
-                end if;
+  					if wr_ptr = FIFO_DEPTH-1 then 
+  						wr_ptr <= 0; 
+  					else 
+  						wr_ptr <= wr_ptr + 1; 
+  					end if;
+				end if;	
 
-                -- Read operation
+                -- Read operation updated
                 if rd_en = '1' then
-                    rd_ptr <= (rd_ptr + 1) mod FIFO_DEPTH;
-                    --fifo_count <= fifo_count - 1;
-                end if;
+  					if rd_ptr = FIFO_DEPTH-1 then 
+  						rd_ptr <= 0; 
+  					else 
+  						rd_ptr <= rd_ptr + 1; 
+  					end if;
+				end if;
                 
                 -- Keep track of the total number of words in the FIFO
                 	
@@ -106,7 +115,7 @@ begin
                 	fifo_count <= fifo_count + 1;
                 elsif wr_en = '0' and rd_en = '1'then
                 	fifo_count <= fifo_count - 1;
-                elsif wr_en = '1' and rd_en = '1' then
+                else
                 	fifo_count <= fifo_count; 
                	end if;	
                 	
@@ -114,7 +123,7 @@ begin
         end if;
     end process;
 
-	-- ILA Instantce 
+	---- ILA Instantce 
 	--Inst_ila_2 : entity work.ila_2
 	--	port map (
 	--		clk 				=> CLK,
@@ -125,11 +134,11 @@ begin
 	--		probe4(0)			=> r_axis_tvalid,	-- m_FIFO tvalid
 	--		probe5(0)			=> M_AXIS_TREADY,	-- m_FIFO tready
 	--		probe6(0) 			=> wr_en,
-	--		probe7(0) 			=> rd_en,
+	--		probe7(0) 			=> sFull,
 	--		probe8				=> std_logic_vector(to_unsigned(fifo_count,8)),
 	--		probe9(0)			=> sEmpty
 	--	);	
-	
+	--
 end architecture;
     
 

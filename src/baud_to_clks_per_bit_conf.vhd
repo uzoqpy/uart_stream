@@ -58,3 +58,55 @@ begin
         o_clks_per_bit <= std_logic_vector(to_unsigned(cpb_i, OUT_WIDTH));
     end process;
 end architecture;
+
+
+--library ieee;
+--use ieee.std_logic_1164.all;
+--use ieee.numeric_std.all;
+--
+---- Compile-time clks-per-bit calculator (no runtime math).
+--entity baud_to_clks_per_bit_const is
+--    generic (
+--        FCLK_HZ   : positive := 100_000_000; -- fabric clock, Hz
+--        BAUD_HZ   : positive := 115_200;     -- UART baud, Hz
+--        OUT_WIDTH : positive := 16;          -- width of output vector
+--        ROUND_EN  : boolean  := false        -- true = round, false = truncate
+--    );
+--    port (
+--        o_clks_per_bit : out std_logic_vector(OUT_WIDTH-1 downto 0)
+--    );
+--end entity;
+--
+--architecture rtl of baud_to_clks_per_bit_const is
+--
+--    -- Choose rounded or truncated division at elaboration.
+--    function clks_per_bit_const(
+--        constant fclk : natural;
+--        constant baud : natural;
+--        constant round_en : boolean
+--    ) return natural is
+--    begin
+--        if round_en then
+--            return (fclk + (baud / 2)) / baud; -- round to nearest
+--        else
+--            return fclk / baud;                 -- truncate
+--        end if;
+--    end function;
+--
+--    constant CLKS_PER_BIT_INT : natural :=
+--        clks_per_bit_const(FCLK_HZ, BAUD_HZ, ROUND_EN);
+--
+--    -- Optional width check (remove if your tool dislikes asserts).
+--    -- pragma translate_off
+--    --assert CLKS_PER_BIT_INT < 2**OUT_WIDTH
+--    --    report "o_clks_per_bit width too small for computed value"
+--    --    severity failure;
+--    -- pragma translate_on
+--
+--    constant CLKS_PER_BIT_VEC : unsigned(OUT_WIDTH-1 downto 0) :=
+--        to_unsigned(CLKS_PER_BIT_INT, OUT_WIDTH);
+--
+--begin
+--    o_clks_per_bit <= std_logic_vector(CLKS_PER_BIT_VEC);
+--end architecture;
+                                   

@@ -68,7 +68,9 @@ architecture rtl of rx_fifo_axis_flush_cfg is
     signal push       		: std_logic;   -- UART byte accepted (in)
 
     -- Sticky overflow
-    signal overflow_r 		: std_logic := '0';
+    signal overflow_r 		: std_logic := '0';   
+    signal r_fifo_full		: std_logic := '0';
+    signal r_fifo_empty		: std_logic := '0';
 
     -- Counters
     signal frame_cnt_r 		: unsigned(31 downto 0) := (others => '0');
@@ -99,14 +101,16 @@ begin
     M_AXIS_TVALID <= m_valid_r;
     M_AXIS_TKEEP  <= "1";
     M_AXIS_TLAST  <= m_last_r;
+    o_fifo_empty  <= r_fifo_empty;	
+    o_fifo_full   <= r_fifo_full;
 
     -- TLAST asserted on final beat of current frame
     m_last_r <= '1' when (stream_active = '1' and m_valid_r = '1' and bytes_left = 1) else '0';
     	
     -- FIFO status signals 
     -- NEW: simple empty/full flags (concurrent)
-    o_fifo_empty <= '1' when occ = 0          else '0';
-    o_fifo_full  <= '1' when occ = FIFO_DEPTH else '0';	
+    r_fifo_empty <= '1' when occ = 0          else '0';
+    r_fifo_full  <= '1' when occ = FIFO_DEPTH else '0';	
 
     fifo_count  <= to_unsigned(occ, fifo_count'length);
     overflow    <= overflow_r;
@@ -250,14 +254,11 @@ begin
 	Inst_ila_3 : entity work.ila_3                                  
   		port map (                                                    
   		  	clk      		=> CLK,                                            
-  		  	probe0(0)		=> m_valid_r,                                        
-  		  	probe1(0)		=> M_AXIS_TREADY,
-  		  	probe2			=> i_frame_bytes,                                       
-  		  	probe3			=> m_data_r,                                  
-  		  	probe4			=> i_rx_byte
-  		  	                           
-  		  	   
-  		);    
+  		  	probe0			=> std_logic_vector(to_unsigned(occ,8)),                                        
+  		  	probe1(0)		=> r_fifo_empty,
+  		  	probe2(0)		=> r_fifo_full ,                                       
+  		  	probe3(0)		=> overflow_r                                  
+   		);    
     
 
 end architecture;

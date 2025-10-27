@@ -12,7 +12,7 @@ entity axi_top is
     generic (
        C_S_AXI_ADDR_WIDTH 		: integer := 6;  -- 64B region (word address = [ADDR_WIDTH-1:2])
        C_S_AXI_DATA_WIDTH		: integer := 32;
-       FIFO_DEPTH				: integer := 256
+       FIFO_DEPTH				: integer := 16
     );
     port (
         -- Global clock/reset
@@ -81,11 +81,12 @@ architecture rtl of axi_top is
 	signal r_uart_tx_en			: std_logic_vector(31 downto 0);
 	signal r_uart_rx_en			: std_logic_vector(31 downto 0);
 	
-    signal r_uart_tx_empty		: std_logic_vector(31 downto 0) := (others => '0');
-    signal r_uart_tx_full	    : std_logic_vector(31 downto 0) := (others => '0');  
-    signal r_uart_rx_empty		: std_logic_vector(31 downto 0) := (others => '0'); 
-    signal r_uart_rx_full	    : std_logic_vector(31 downto 0) := (others => '0'); 	
-    signal reg3          		: std_logic_vector(31 downto 0) := (others => '0');
+    signal r_uart_tx_empty		: std_logic:= '0';
+    signal r_uart_tx_full	    : std_logic:= '0';  
+    signal r_uart_rx_empty		: std_logic:= '0'; 
+    signal r_uart_rx_full	    : std_logic:= '0'; 	
+    signal LSR          		: std_logic_vector(31 downto 0) := (others => '0'); -- Line Status Register
+    signal LCR          		: std_logic_vector(31 downto 0) := (others => '0'); -- Line Control Register	
     
     -- Ready output signals
     signal 	r_axi_awready		: std_logic;
@@ -139,13 +140,14 @@ begin
     r_hs  <= r_axi_rvalid  and S_AXI_RREADY; 
 
     -- ---------------
-    -- User taps
+    -- Line Status Register 
     -- ---------------
-    --reg0_o <= reg0;
-    --reg1_o <= reg1;
-    --reg2_o <= reg2;
-    --reg3_o <= reg3;
-
+    LSR(0) 	 <=  r_uart_rx_empty;	-- REMP
+    LSR(1) 	 <=  r_uart_tx_empty;
+    LSR(2) 	 <=  r_uart_tx_full;	
+    LSR(3) 	 <=  r_uart_rx_full;		
+    	
+   
     -- ====================================================
     -- AW channel process (sole owner of have_aw & AWREADY)
     -- ====================================================
@@ -221,9 +223,8 @@ begin
                         when 0 => r_baud_rate 			<= wdata_reg;
                         when 1 => r_frame_bytes 		<= wdata_reg;
                         when 2 => r_idle_flush_bytes 	<= wdata_reg;
-                        when 3 => r_uart_tx_en          <= wdata_reg;
-                        when 4 => r_uart_rx_en			<= wdata_reg;
-                        when 5 => r_fclk_hz				<= wdata_reg;	
+                        when 3 => LCR		          	<= wdata_reg;
+                        when 4 => r_fclk_hz				<= wdata_reg;	
                         when others => null; -- writes to unmapped addrs are ignored
                     end case;
 
@@ -275,10 +276,7 @@ begin
                 if (have_ar = '1') and (r_axi_rvalid = '0') then
                     raddr := unsigned(araddr_reg(araddr_reg'left downto 2));
                     case to_integer(raddr) is
-                        when 6 		=> S_AXI_RDATA <= r_uart_tx_empty;		-- TX EMPTY 
-                        when 7 		=> S_AXI_RDATA <= r_uart_tx_full;		-- TX FULL
-                        when 8 		=> S_AXI_RDATA <= r_uart_rx_empty;		-- RX EMPTY
-                        when 9 		=> S_AXI_RDATA <= r_uart_rx_full;		-- RX FULL
+                        when 5 		=> S_AXI_RDATA <= LSR;		-- TX FIFO  FULL/EMPTY RX FIFO FULL/EMPTY in LSR register 
                         when others => S_AXI_RDATA <= (others => '0');
                     end case;
                     r_axi_rvalid <= '1';
@@ -321,17 +319,17 @@ begin
 			-- Control Line 
 			i_FRAME_BYTES           => r_frame_bytes(15 downto 0),     
 			i_IDLE_FLUSH_BYTES	    => r_idle_flush_bytes(7 downto 0),
-			i_CLKS_PER_BIT    	    => r_clks_per_bit, 
+			i_CLKS_PER_BIT    	    => r_clks_per_bit, -- r_clks_per_bit, "1101100001"
 			 
-			i_UART_TX_EN			=> r_uart_tx_en(0),
-			i_UART_RX_EN			=> r_uart_rx_en(0),
+			i_UART_TX_EN			=> LCR(0),
+			i_UART_RX_EN			=> LCR(1),
 			
 			-- FIFO Status signal                   	
-			O_TX_FIFO_EMPTY			=> r_uart_tx_empty(0),
-			O_TX_FIFO_FULL			=> r_uart_tx_full(0), 
+			O_TX_FIFO_EMPTY			=> r_uart_tx_empty,
+			O_TX_FIFO_FULL			=> r_uart_tx_full, 
 			
-			O_RX_FIFO_EMPTY			=> r_uart_rx_empty(0), 
-			O_RX_FIFO_FULL			=> r_uart_rx_full(0),	
+			O_RX_FIFO_EMPTY			=> r_uart_rx_empty, 
+			O_RX_FIFO_FULL			=> r_uart_rx_full,	
 				         
     	    -- Optionally: outputs for user logic
     	    i_Sin 					=> SIN,
@@ -352,7 +350,30 @@ begin
     	    o_clks_per_bit 		=> r_clks_per_bit
     	);
 	
-	                                             
+	--Inst_baud_to_clks_per_bit_const : entity work.baud_to_clks_per_bit_const 
+    --generic map (
+    --    FCLK_HZ   				=> 100_000_000, -- fabric clock, Hz
+    --    BAUD_HZ   				=> 115_200,     -- UART baud, Hz
+    --    OUT_WIDTH 				=> 16,          -- width of output vector
+    --    ROUND_EN  				=> false        -- true = round, false = truncate
+    --)
+    --port map (
+    --    o_clks_per_bit 			=> r_clks_per_bit
+    --);
+
+	
+	--Inst_ila_3 : entity work.ila_3                                  
+  	--	port map (                                                    
+  	--	  	clk      		=> ACLK,                                            
+  	--	  	probe0			=> r_uart_tx_empty,                                        
+  	--	  	probe1			=> r_uart_tx_full,
+  	--	  	probe2			=> r_uart_rx_empty,                                       
+  	--	  	probe3			=> r_uart_rx_full                                  
+  	--	  	--probe4			=> i_rx_byte
+  	--	  	                           
+  	--	  	   
+  	--	);    
+                                                 
 
 
 end architecture;
